@@ -1,10 +1,13 @@
 from dataclasses import dataclass, field
 from typing import Optional
+
 from transformers import MODEL_FOR_CAUSAL_LM_MAPPING
 from transformers.utils.versions import require_version
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
 @dataclass
 class ModelArguments:
     """
@@ -124,6 +127,7 @@ class ModelArguments:
             )
         },
     )
+
     def __post_init__(self):
         if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
             raise ValueError(
@@ -144,12 +148,14 @@ class DataTrainingArguments:
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
     mmt_data_path: Optional[str] = field(default=None, metadata={"help": "The input MMT training data path."})
-    override_test_data_path: Optional[str] = field(default=None, metadata={"help": "This will override the default test data in the mmt data"})
+    override_test_data_path: Optional[str] = field(default=None, metadata={
+        "help": "This will override the default test data in the mmt data"})
     cpo_data_path: Optional[str] = field(default=None, metadata={"help": "The input CPO training data path."})
     mono_data_path: Optional[str] = field(default=None, metadata={"help": "The input mono data training data path."})
     oscar_data_path: Optional[str] = field(default=None, metadata={"help": "The input Oscar mono data name."})
     oscar_data_lang: Optional[str] = field(default=None, metadata={"help": "The input Oscar mono data language."})
-    text_test_file:  Optional[str] = field(default=None, metadata={"help": "A single test data file in text format, this will override the mmt_data_path and override_test_data_path"})
+    text_test_file: Optional[str] = field(default=None, metadata={
+        "help": "A single test data file in text format, this will override the mmt_data_path and override_test_data_path"})
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
@@ -302,7 +308,6 @@ class DataTrainingArguments:
             "help": "The scorer of CPO, e.g., using xcomet, kiwi, or both of them (xcomet-kiwi) for CPO training"
         },
     )
-
 
     # predict_source_lang: str = field(default="", metadata={"help": "The source language for testing"})
     # predict_target_lang: str = field(default="en", metadata={"help": "The target language for testing"})

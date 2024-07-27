@@ -1,23 +1,23 @@
 #!/usr/bin/env python
 # coding=utf-8
 
-import logging
 import copy
+import json
+import logging
 import math
 import os
 import sys
-import json
+from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional
-import numpy as np
 
 import datasets
 import evaluate
+import numpy as np
 import torch
-from datasets import load_dataset
-
 import transformers
+from datasets import interleave_datasets, load_dataset
 from transformers import (
     HfArgumentParser,
     Seq2SeqTrainingArguments,
@@ -25,12 +25,12 @@ from transformers import (
     set_seed,
 )
 from transformers.utils import send_example_telemetry
-from collections import defaultdict
-from datasets import  interleave_datasets
+from trl import CPOConfig, CPOTrainer
+
+from utils.arguments import DataTrainingArguments, ModelArguments
 from utils.trainer_llmmt import LlmmtTrainer
-from utils.utils import LANG_TABLE, load_mmt_dataset, preprocess_cpo_data, clean_outputstring, load_tokenizer, load_model, SavePeftModelCallback, get_key_suffix
-from utils.arguments import ModelArguments, DataTrainingArguments
-from trl import CPOTrainer, CPOConfig
+from utils.utils import LANG_TABLE, SavePeftModelCallback, clean_outputstring, get_key_suffix, load_mmt_dataset, \
+    load_model, load_tokenizer, preprocess_cpo_data
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-    
+
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, CPOConfig))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -94,9 +94,9 @@ def main():
                 cache_dir=model_args.cache_dir,
                 use_auth_token=True if model_args.use_auth_token else None,
                 streaming=data_args.streaming,
-                )
+            )
         seen.add((first_lang, second_lang))
-    
+
     # load tokenizer
     set_seed(training_args.seed)
     tokenizer = load_tokenizer(data_args, model_args, training_args, logger)
@@ -111,10 +111,12 @@ def main():
                 shots_eval_dict[lg_pair] = json.load(f)
 
     # Preprocess data
-    train_datasets, eval_datasets, test_datasets = preprocess_cpo_data(train_raw_data, valid_raw_data, test_raw_data, pairs, tokenizer, shots_eval_dict, data_args, training_args, model_args)
+    train_datasets, eval_datasets, test_datasets = preprocess_cpo_data(train_raw_data, valid_raw_data, test_raw_data,
+                                                                       pairs, tokenizer, shots_eval_dict, data_args,
+                                                                       training_args, model_args)
 
     # Load model
-    model = load_model(data_args, model_args, training_args, tokenizer, logger) 
+    model = load_model(data_args, model_args, training_args, tokenizer, logger)
 
     # Initialize our Trainer
     trainer = CPOTrainer(
@@ -130,15 +132,16 @@ def main():
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
             checkpoint = training_args.resume_from_checkpoint
-        
+
         trainer.train(resume_from_checkpoint=checkpoint)
 
         trainer.save_state()
         if model_args.use_peft:
             if torch.distributed.get_rank() == 0:
-                model.save_pretrained(training_args.output_dir) 
+                model.save_pretrained(training_args.output_dir)
         else:
             trainer.save_model()  # Saves the tokenizer too for easy upload
+
 
 def _mp_fn(index):
     # For xla_spawn (TPUs)

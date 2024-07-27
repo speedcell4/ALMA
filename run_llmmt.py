@@ -1,51 +1,38 @@
 #!/usr/bin/env python
 # coding=utf-8
 
-import logging
 import copy
+import json
+import logging
 import math
 import os
 import sys
-import json
+from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import chain
 from typing import Optional
-import numpy as np
 
 import datasets
 import evaluate
+import numpy as np
 import torch
-from datasets import load_dataset
-
 import transformers
-from transformers import (
-    CONFIG_MAPPING,
-    MODEL_FOR_CAUSAL_LM_MAPPING,
-    AutoConfig,
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    HfArgumentParser,
-    Trainer,
-    TrainingArguments,
-    Seq2SeqTrainingArguments,
-    default_data_collator,
-    is_torch_tpu_available,
-    set_seed,
-    LlamaTokenizer,
-)
+from datasets import concatenate_datasets, interleave_datasets, load_dataset
+from peft import LoraConfig, PeftConfig, PeftModel, TaskType, get_peft_model, prepare_model_for_int8_training
+from transformers import (AutoConfig, AutoModelForCausalLM, AutoTokenizer, CONFIG_MAPPING, HfArgumentParser,
+                          LlamaTokenizer, MODEL_FOR_CAUSAL_LM_MAPPING, Seq2SeqTrainingArguments, Trainer,
+                          TrainingArguments, default_data_collator, is_torch_tpu_available, set_seed)
 from transformers.testing_utils import CaptureLogger
+from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
-from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, TaskType
-from peft import PeftModel, PeftConfig
-from collections import defaultdict
-from transformers.trainer_callback import TrainerCallback
-from datasets import concatenate_datasets, interleave_datasets
+
+from utils.arguments import DataTrainingArguments, ModelArguments
 from utils.trainer_llmmt import LlmmtTrainer
-from utils.utils import LANG_TABLE, load_mmt_dataset, get_preprocessed_data, clean_outputstring, load_a_single_text_file, load_tokenizer, load_model, SavePeftModelCallback, get_key_suffix
-from utils.arguments import ModelArguments, DataTrainingArguments
 from utils.ul2collator import DataCollatorForUL2
+from utils.utils import LANG_TABLE, SavePeftModelCallback, clean_outputstring, get_key_suffix, get_preprocessed_data, \
+    load_a_single_text_file, load_mmt_dataset, load_model, load_tokenizer
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +45,7 @@ def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-    
+
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, Seq2SeqTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -102,7 +89,8 @@ def main():
     if data_args.text_test_file:
         test_raw_data = load_a_single_text_file(pairs, data_args, model_args)
     elif data_args.mmt_data_path:
-        train_raw_data, valid_raw_data, test_raw_data = load_mmt_dataset(pairs, data_args, model_args, training_args, logger)
+        train_raw_data, valid_raw_data, test_raw_data = load_mmt_dataset(pairs, data_args, model_args, training_args,
+                                                                         logger)
 
     if data_args.mono_data_path:
         train_raw_data = load_dataset(
@@ -117,7 +105,7 @@ def main():
         if data_args.interleave_probs:
             interleave_probs = [float(p) for p in data_args.interleave_probs.split(",")]
         else:
-            interleave_probs = [1/len(oscar_langs)] * len(oscar_langs)
+            interleave_probs = [1 / len(oscar_langs)] * len(oscar_langs)
         oscar_langs = [x for x, _ in sorted(zip(oscar_langs, interleave_probs), key=lambda zippair: zippair[1])]
         interleave_probs = sorted(interleave_probs)
         train_raw_data = []
@@ -131,8 +119,9 @@ def main():
                     streaming=data_args.streaming,
                 )['train']
             )
-        train_raw_data = interleave_datasets(train_raw_data, probabilities=interleave_probs, seed=training_args.seed, stopping_strategy="all_exhausted")
-    
+        train_raw_data = interleave_datasets(train_raw_data, probabilities=interleave_probs, seed=training_args.seed,
+                                             stopping_strategy="all_exhausted")
+
     # load tokenizer
     set_seed(training_args.seed)
     tokenizer = load_tokenizer(data_args, model_args, training_args, logger)
@@ -148,13 +137,15 @@ def main():
             with open(pair_shot_path) as f:
                 shots_eval_dict[lg_pair] = json.load(f)
 
-    train_datasets, eval_datasets, test_datasets = get_preprocessed_data(train_raw_data, valid_raw_data, test_raw_data, pairs, tokenizer, shots_eval_dict, data_args, training_args, model_args)
+    train_datasets, eval_datasets, test_datasets = get_preprocessed_data(train_raw_data, valid_raw_data, test_raw_data,
+                                                                         pairs, tokenizer, shots_eval_dict, data_args,
+                                                                         training_args, model_args)
     metric = evaluate.load("sacrebleu")
 
     # Load model
     model = load_model(data_args, model_args, training_args, tokenizer, logger)
     collate_fn = DataCollatorForUL2(model, tokenizer) if data_args.use_ul2 else default_data_collator
-    
+
     # Initialize our Trainer
     trainer = LlmmtTrainer(
         model=model,
@@ -176,21 +167,21 @@ def main():
 
         trainer.save_state()
         if model_args.use_peft:
-            model.save_pretrained(training_args.output_dir) 
+            model.save_pretrained(training_args.output_dir)
         else:
             trainer.save_model()  # Saves the tokenizer too for easy upload
     # Prediction
     if training_args.do_predict:
         trainer.args.prediction_loss_only = False
-        lg_pairs = sorted(test_datasets.keys()) # make sure each device print in the same order
+        lg_pairs = sorted(test_datasets.keys())  # make sure each device print in the same order
         for lg_pair in lg_pairs:
             test_dataset = test_datasets[lg_pair]
             src_lang, tgt_lang = lg_pair.split("-")
             logger.info(f"*** Prediction for {lg_pair}***")
             preds, _, _ = trainer.predict(
-                test_dataset=test_dataset, 
-                max_new_tokens=data_args.max_new_tokens, 
-                num_beams=data_args.num_beams, 
+                test_dataset=test_dataset,
+                max_new_tokens=data_args.max_new_tokens,
+                num_beams=data_args.num_beams,
                 metric_key_prefix="test",
                 use_cache=True,
             )
@@ -207,7 +198,9 @@ def main():
                     print("------------------------")
                     print(decoded_preds[idx])
 
-                with open(os.path.join(training_args.output_dir, f"test-{src_lang}-{tgt_lang}{data_args.suffix_eval_file}"), "w", encoding="utf-8") as f:
+                with open(os.path.join(training_args.output_dir,
+                                       f"test-{src_lang}-{tgt_lang}{data_args.suffix_eval_file}"), "w",
+                          encoding="utf-8") as f:
                     suffix = get_key_suffix(tgt_lang, data_args)
                     if len(shots_eval_dict) != 0:
                         split_idx = len(shots_eval_dict[lg_pair]) + 1
@@ -217,6 +210,7 @@ def main():
                         pred = clean_outputstring(pred, suffix, logger, split_idx)
                         f.writelines([pred, "\n"])
 
+
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()
@@ -224,4 +218,3 @@ def _mp_fn(index):
 
 if __name__ == "__main__":
     main()
-

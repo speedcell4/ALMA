@@ -12,15 +12,12 @@ from torch.utils.data import DataLoader
 from transformers import DataCollator, PreTrainedModel, PreTrainedTokenizerBase, Trainer, TrainingArguments
 from transformers.trainer_callback import TrainerCallback
 from transformers.trainer_utils import EvalLoopOutput
-
 from trl.import_utils import is_peft_available, is_wandb_available
 from trl.models import PreTrainedModelWrapper, create_reference_model
 from trl.trainer.utils import DPODataCollatorWithPadding, disable_dropout_in_model, pad_to_length
 
-
 if is_peft_available():
     from peft import PeftModel, get_peft_model, prepare_model_for_kbit_training
-
 
 if is_wandb_available():
     import wandb
@@ -88,33 +85,33 @@ class CPOTrainer(Trainer):
     """
 
     def __init__(
-        self,
-        model: Union[PreTrainedModel, nn.Module] = None,
-        beta: float = 1.0,
-        loss_type: Literal["sigmoid", "hinge"] = "sigmoid",
-        args: TrainingArguments = None,
-        data_collator: Optional[DataCollator] = None,
-        label_pad_token_id: int = -100,
-        padding_value: int = 0,
-        truncation_mode: str = "keep_end",
-        train_dataset: Optional[Dataset] = None,
-        eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
-        tokenizer: Optional[PreTrainedTokenizerBase] = None,
-        model_init: Optional[Callable[[], PreTrainedModel]] = None,
-        callbacks: Optional[List[TrainerCallback]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
-            None,
-            None,
-        ),
-        preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
-        max_length: Optional[int] = None,
-        max_prompt_length: Optional[int] = None,
-        max_target_length: Optional[int] = None,
-        peft_config: Optional[Dict] = None,
-        is_encoder_decoder: Optional[bool] = None,
-        disable_dropout: bool = True,
-        generate_during_eval: bool = False,
-        compute_metrics: Optional[Callable[[EvalLoopOutput], Dict]] = None,
+            self,
+            model: Union[PreTrainedModel, nn.Module] = None,
+            beta: float = 1.0,
+            loss_type: Literal["sigmoid", "hinge"] = "sigmoid",
+            args: TrainingArguments = None,
+            data_collator: Optional[DataCollator] = None,
+            label_pad_token_id: int = -100,
+            padding_value: int = 0,
+            truncation_mode: str = "keep_end",
+            train_dataset: Optional[Dataset] = None,
+            eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
+            tokenizer: Optional[PreTrainedTokenizerBase] = None,
+            model_init: Optional[Callable[[], PreTrainedModel]] = None,
+            callbacks: Optional[List[TrainerCallback]] = None,
+            optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (
+                    None,
+                    None,
+            ),
+            preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+            max_length: Optional[int] = None,
+            max_prompt_length: Optional[int] = None,
+            max_target_length: Optional[int] = None,
+            peft_config: Optional[Dict] = None,
+            is_encoder_decoder: Optional[bool] = None,
+            disable_dropout: bool = True,
+            generate_during_eval: bool = False,
+            compute_metrics: Optional[Callable[[EvalLoopOutput], Dict]] = None,
     ):
         if not is_peft_available() and peft_config is not None:
             raise ValueError(
@@ -294,9 +291,9 @@ class CPOTrainer(Trainer):
         return concatenated_batch
 
     def cpo_loss(
-        self,
-        policy_chosen_logps: torch.FloatTensor,
-        policy_rejected_logps: torch.FloatTensor,
+            self,
+            policy_chosen_logps: torch.FloatTensor,
+            policy_rejected_logps: torch.FloatTensor,
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         """Compute the CPO loss for a batch of policy and reference model log probabilities.
 
@@ -314,7 +311,7 @@ class CPOTrainer(Trainer):
             The chosen_rewards and rejected_rewards tensors contain the rewards for the chosen and rejected responses, respectively.
         """
         logits = policy_chosen_logps - policy_rejected_logps
-        
+
         if self.loss_type == "sigmoid":
             losses = -F.logsigmoid(self.beta * logits)
         elif self.loss_type == "hinge":
@@ -328,10 +325,10 @@ class CPOTrainer(Trainer):
         return losses, chosen_rewards, rejected_rewards
 
     def _get_batch_logps(
-        self,
-        logits: torch.FloatTensor,
-        labels: torch.LongTensor,
-        average_log_prob: bool = False,
+            self,
+            logits: torch.FloatTensor,
+            labels: torch.LongTensor,
+            average_log_prob: bool = False,
     ) -> torch.FloatTensor:
         """Compute the log probabilities of the given labels under the given logits.
 
@@ -362,7 +359,7 @@ class CPOTrainer(Trainer):
             return (per_token_logps * loss_mask).sum(-1)
 
     def concatenated_forward(
-        self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
+            self, model: nn.Module, batch: Dict[str, Union[List, torch.LongTensor]]
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         """Run the given model on the given batch of inputs, concatenating the chosen and rejected inputs together.
 
@@ -384,6 +381,7 @@ class CPOTrainer(Trainer):
             attention_mask=concatenated_batch["concatenated_attention_mask"],
             **model_kwargs,
         )
+
         def cross_entropy_loss(logits, labels):
             # Shift so that tokens < n predict n
             shift_logits = logits[..., :-1, :].contiguous()
@@ -396,7 +394,7 @@ class CPOTrainer(Trainer):
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
             return loss
-        
+
         all_logits = outputs.logits.to(torch.float32)
         if isinstance(outputs, dict) and "loss" not in outputs:
             labels = concatenated_batch["concatenated_labels"]
@@ -406,13 +404,13 @@ class CPOTrainer(Trainer):
             clm_loss = loss_chosen
         else:
             clm_loss = outputs.loss
-        
+
         all_logps = self._get_batch_logps(
             all_logits,
             concatenated_batch["concatenated_labels"],
             average_log_prob=False,
         )
-        
+
         chosen_logps = all_logps[:len_chosen]
         rejected_logps = all_logps[len_chosen:]
 
@@ -422,10 +420,10 @@ class CPOTrainer(Trainer):
         return (chosen_logps, rejected_logps, chosen_logits, rejected_logits, clm_loss)
 
     def get_batch_metrics(
-        self,
-        model,
-        batch: Dict[str, Union[List, torch.LongTensor]],
-        train_eval: Literal["train", "eval"] = "train",
+            self,
+            model,
+            batch: Dict[str, Union[List, torch.LongTensor]],
+            train_eval: Literal["train", "eval"] = "train",
     ):
         """Compute the DPO loss and other metrics for the given batch of inputs for train or test."""
         metrics = {}
@@ -460,10 +458,10 @@ class CPOTrainer(Trainer):
         return loss, metrics
 
     def compute_loss(
-        self,
-        model: Union[PreTrainedModel, nn.Module],
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        return_outputs=False,
+            self,
+            model: Union[PreTrainedModel, nn.Module],
+            inputs: Dict[str, Union[torch.Tensor, Any]],
+            return_outputs=False,
     ) -> Union[torch.Tensor, Tuple[torch.Tensor, Dict[str, torch.Tensor]]]:
         if not self.use_dpo_data_collator:
             warnings.warn(
@@ -518,11 +516,11 @@ class CPOTrainer(Trainer):
         return policy_output_decoded, reference_output_decoded
 
     def prediction_step(
-        self,
-        model: Union[PreTrainedModel, nn.Module],
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        prediction_loss_only: bool,
-        ignore_keys: Optional[List[str]] = None,
+            self,
+            model: Union[PreTrainedModel, nn.Module],
+            inputs: Dict[str, Union[torch.Tensor, Any]],
+            prediction_loss_only: bool,
+            ignore_keys: Optional[List[str]] = None,
     ):
         if not self.use_dpo_data_collator:
             warnings.warn(
@@ -561,12 +559,12 @@ class CPOTrainer(Trainer):
             self._stored_metrics[train_eval][key].append(value)
 
     def evaluation_loop(
-        self,
-        dataloader: DataLoader,
-        description: str,
-        prediction_loss_only: Optional[bool] = None,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
+            self,
+            dataloader: DataLoader,
+            description: str,
+            prediction_loss_only: Optional[bool] = None,
+            ignore_keys: Optional[List[str]] = None,
+            metric_key_prefix: str = "eval",
     ) -> EvalLoopOutput:
         """
         Overriding built-in evaluation loop to store metrics for each batch.
@@ -593,7 +591,7 @@ class CPOTrainer(Trainer):
                     "game_log": wandb.Table(
                         columns=["Prompt", "Policy", "Ref Model"],
                         rows=[
-                            [prompt, pol[len(prompt) :], ref[len(prompt) :]]
+                            [prompt, pol[len(prompt):], ref[len(prompt):]]
                             for prompt, pol, ref in zip(
                                 random_batch["prompt"], policy_output_decoded, ref_output_decoded
                             )

@@ -14,17 +14,15 @@
 
 from copy import deepcopy
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING, Tuple, Union
 
 import torch
 from torch import nn
 from torch.utils.data import Dataset
-
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 from transformers.generation.configuration_utils import GenerationConfig
 from transformers.trainer import Trainer
 from transformers.utils import logging
-
 
 if TYPE_CHECKING:
     from transformers.data.data_collator import DataCollator
@@ -34,24 +32,23 @@ if TYPE_CHECKING:
     from transformers.trainer_utils import EvalPrediction, PredictionOutput
     from transformers.training_args import TrainingArguments
 
-
 logger = logging.get_logger(__name__)
 
 
 class LlmmtTrainer(Trainer):
     def __init__(
-        self,
-        model: Union["PreTrainedModel", nn.Module] = None,
-        args: "TrainingArguments" = None,
-        data_collator: Optional["DataCollator"] = None,
-        train_dataset: Optional[Dataset] = None,
-        eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
-        tokenizer: Optional["PreTrainedTokenizerBase"] = None,
-        model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
-        compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
-        callbacks: Optional[List["TrainerCallback"]] = None,
-        optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-        preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
+            self,
+            model: Union["PreTrainedModel", nn.Module] = None,
+            args: "TrainingArguments" = None,
+            data_collator: Optional["DataCollator"] = None,
+            train_dataset: Optional[Dataset] = None,
+            eval_dataset: Optional[Union[Dataset, Dict[str, Dataset]]] = None,
+            tokenizer: Optional["PreTrainedTokenizerBase"] = None,
+            model_init: Optional[Callable[[], "PreTrainedModel"]] = None,
+            compute_metrics: Optional[Callable[["EvalPrediction"], Dict]] = None,
+            callbacks: Optional[List["TrainerCallback"]] = None,
+            optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+            preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
     ):
         super().__init__(
             model=model,
@@ -110,11 +107,11 @@ class LlmmtTrainer(Trainer):
         return gen_config
 
     def evaluate(
-        self,
-        eval_dataset: Optional[Dataset] = None,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
-        **gen_kwargs,
+            self,
+            eval_dataset: Optional[Dataset] = None,
+            ignore_keys: Optional[List[str]] = None,
+            metric_key_prefix: str = "eval",
+            **gen_kwargs,
     ) -> Dict[str, float]:
         """
         Run evaluation and returns metrics.
@@ -159,11 +156,11 @@ class LlmmtTrainer(Trainer):
         return super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
 
     def predict(
-        self,
-        test_dataset: Dataset,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "test",
-        **gen_kwargs,
+            self,
+            test_dataset: Dataset,
+            ignore_keys: Optional[List[str]] = None,
+            metric_key_prefix: str = "test",
+            **gen_kwargs,
     ) -> "PredictionOutput":
         """
         Run prediction and returns predictions and potential metrics.
@@ -216,11 +213,11 @@ class LlmmtTrainer(Trainer):
         return super().predict(test_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
 
     def prediction_step(
-        self,
-        model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        prediction_loss_only: bool,
-        ignore_keys: Optional[List[str]] = None,
+            self,
+            model: nn.Module,
+            inputs: Dict[str, Union[torch.Tensor, Any]],
+            prediction_loss_only: bool,
+            ignore_keys: Optional[List[str]] = None,
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Perform an evaluation step on `model` using `inputs`.
@@ -268,9 +265,9 @@ class LlmmtTrainer(Trainer):
         # If the `decoder_input_ids` was created from `labels`, evict the former, so that the model can freely generate
         # (otherwise, it would continue generating from the padded `decoder_input_ids`)
         if (
-            "labels" in inputs
-            and "decoder_input_ids" in inputs
-            and inputs["labels"].shape == inputs["decoder_input_ids"].shape
+                "labels" in inputs
+                and "decoder_input_ids" in inputs
+                and inputs["labels"].shape == inputs["decoder_input_ids"].shape
         ):
             inputs = {k: v for k, v in inputs.items() if k != "decoder_input_ids"}
         generated_tokens = self.model.generate(**inputs, **gen_kwargs)
